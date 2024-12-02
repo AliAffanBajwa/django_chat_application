@@ -1,0 +1,16 @@
+{% extends "authApp/base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-center align-items-center" style="min-height: 100vh;">
+    <div class="text-center p-4 border rounded shadow">
+        <h1 class="mb-3">Delete this chatroom?</h1>
+        <h2 class="mb-4 text-danger">"{{ chat_group.groupchat_name }}"</h2>
+
+        <form method="POST" class="d-inline-block">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-lg">Yes, delete</button>
+            <a class="btn btn-secondary btn-lg ms-2" href="{{ request.META.HTTP_REFERER }}">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

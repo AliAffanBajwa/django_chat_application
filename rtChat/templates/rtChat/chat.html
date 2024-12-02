@@ -1,0 +1,169 @@
+{% extends "authApp/base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark w-100">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="#">Real-time Chat Application</a>
+
+        <div class="d-flex align-items-center justify-content-center mx-auto">
+            {% if user.is_authenticated %}
+                <span class="navbar-text me-3 text-light">
+                    <strong>{{ user.username }}</strong> Logged in &nbsp;&nbsp;
+                </span>
+                <a href="{% url 'logout' %}" class="btn btn-danger">Logout</a>
+            {% else %}
+                <a href="{% url 'login' %}" class="btn btn-primary">Login</a>
+            {% endif %}
+        </div>
+
+        <div class="dropdown ms-auto">
+            <button
+                class="btn btn-secondary dropdown-toggle"
+                type="button"
+                id="chatDropdownMenu"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+            >
+                Chat Options
+            </button>
+            <ul class="dropdown-menu" aria-labelledby="chatDropdownMenu">
+                <li><a class="dropdown-item" href="{% url 'home' %}">Public Chat</a></li>
+                <!-- <li><a class="dropdown-item" href="#">Private Chat</a></li> -->
+                <li><a class="dropdown-item" href="{% url 'new-groupchat' %}">Group Chat</a></li>
+                {% for chatroom in user.chat_groups.all %}
+                {% if chatroom.groupchat_name %}
+                <li>
+                    <a class="dropdown-item" href="{% url 'chatroom' chatroom.group_name %}">
+                        {{ chatroom.groupchat_name }}
+                    </a>
+                </li>
+                {% endif %}
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container my-5">
+    <div id="chat_window" class="card bg-dark text-light shadow-lg rounded-4 overflow-hidden">
+       
+        <div class="card-header text-center bg-dark text-success py-3 border-0">
+            {% if chat_group.groupchat_name %}
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold">{{ chat_group.groupchat_name }}</h5>
+                {% if user == chat_group.admin %}
+                <a href="{% url 'edit-chatroom' chat_group.group_name %}" class="text-decoration-none">
+                    <div class="p-2 bg-light rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm" style="cursor: pointer; width: 40px; height: 40px;">
+                        <svg class="fill-secondary" width="16" height="16">
+                            <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Zm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z"></path>
+                        </svg>
+                    </div>
+                </a>
+                {% endif %}
+            </div>
+            {% else %}
+            <span id="online-count" class="fw-bold me-1"></span>Online
+            {% endif %}
+        </div>
+
+        <div class="card-body overflow-auto" style="height: 45rem; display: flex; flex-direction: column; border-top: 1px solid #6c757d;">
+            {% if chat_group.groupchat_name %}
+            <div class="bg-dark text-center mb-3 py-2 border-bottom border-secondary">
+                <ul class="list-inline mb-0">
+                    {% for member in chat_group.members.all %}
+                    <li class="list-inline-item text-light text-truncate" style="max-width: 10rem;">
+                        <small><strong>{{ member.username }}</strong></small>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div id="chat_container" class="overflow-auto flex-grow-1 d-flex flex-column-reverse">
+                <ul id="chat_messages" class="list-unstyled mb-0">
+                    {% for message in chat_messages reversed %}
+                        {% include 'rtChat/chat_message.html' %}
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+
+        <div class="card-footer bg-dark border-top border-secondary py-3">
+            <form id="chat_message_form" class="d-flex flex-column gap-3"
+                hx-ext="ws"
+                ws-connect="/ws/chatroom/{{ chatroom_name }}"
+                ws-send
+                _="on htmx:wsAfterSend reset() me">
+                {% csrf_token %}
+                <div class="input-group">
+                    {{ form.body }}
+                    <button type="submit" class="btn btn-success">Send</button>
+                </div>
+            </form>
+
+            <form id="chat_file_form" enctype="multipart/form-data" class="d-flex align-items-center mt-3"
+                hx-post="{% url 'chat-file-upload' chat_group.group_name %}"
+                hx-target="#chat_messages"
+                hx-swap="beforeend">
+                {% csrf_token %}
+                <input type="file" name="file" id="id_file" class="form-control text-secondary">
+                <button type="submit" class="btn btn-primary text-nowrap ms-2">Upload</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="text-end mt-3">
+        {% if chat_group.members.exists %}
+        <a href="{% url 'chatroom-leave' chat_group.group_name %}" class="btn btn-outline-danger btn-sm">
+            Leave Chat
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+
+{% endblock %}
+
+{% block javascript %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const chatContainer = document.getElementById("chat_container");
+        const chatMessages = document.getElementById("chat_messages");
+        const chatWindow = document.getElementById("chat_window"); 
+
+        function scrollPageToBottom() {
+            window.scrollTo(0, chatWindow.offsetTop + chatWindow.offsetHeight);
+        }
+
+        function scrollChatToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        document.body.addEventListener("htmx:afterSwap", function (event) {
+            if (event.target.id === "chat_messages") {
+                scrollChatToBottom(); 
+                scrollPageToBottom(); 
+            }
+        });
+
+        const observer = new MutationObserver(() => {
+            scrollChatToBottom();
+            scrollPageToBottom();
+        });
+
+        observer.observe(chatMessages, {
+            childList: true, 
+            subtree: true
+        });
+
+        scrollPageToBottom();
+        scrollChatToBottom();
+    });
+
+</script>
+
+
+{% endblock %}

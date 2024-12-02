@@ -1,0 +1,23 @@
+{% if message.author == user %}
+<li class="d-flex justify-content-end mb-3">
+    <div class="bg-success text-light rounded-3 p-3 shadow-sm chat-message">
+        {% include 'rtChat/partials/message_content.html' %}
+    </div>
+    <div class="ms-2 align-self-end">
+        <svg height="13" width="8">
+            <path fill="#bbf7d0" d="M6.3,10.4C1.5,8.7,0.9,5.5,0,0.2L0,13l5.2,0C7,13,9.6,11.5,6.3,10.4z"></path>
+        </svg>
+    </div>
+</li>
+{% else %}
+<li class="d-flex align-items-start mb-3">
+    <div>
+        <div class="bg-light text-dark rounded-3 p-3 shadow-sm chat-message">
+            {% include 'rtChat/partials/message_content.html' %}
+        </div>
+        <div class="text-muted small mt-1">
+        <span class="text-light">{{ message.author }}</span>
+        </div>
+    </div>
+</li>
+{% endif %}

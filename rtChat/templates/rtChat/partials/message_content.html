@@ -1,0 +1,82 @@
+{% if message.body %}
+    {{ message.body }}
+{% elif message.file %}
+    {% if message.is_image %}
+        <img class="img-fluid" style="max-width: 18rem; min-width: 2rem;" src="{{ message.file.url }}" alt="File Preview" />
+    {% else %}
+        {% if message.filename|lower|slice:"-4:" == ".pdf" %}
+            <canvas class="pdf-preview" style="max-width: 18rem; min-width: 2rem;" data-rendering="false"></canvas>
+        {% endif %}
+        &#x1F4CE; <a class="text-decoration-none fst-italic" href="{{ message.file.url }}" download>{{ message.filename }}</a>
+    {% endif %}
+{% endif %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script>
+    function initializePDFPreview(canvas) {
+        if (!canvas) return;
+
+        if (canvas.dataset.rendering === "true") {
+            console.log("Rendering already in progress for this canvas.");
+            return;
+        }
+
+        canvas.dataset.rendering = "true"; 
+
+        const pdfjsLib = window["pdfjs-dist/build/pdf"];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+        const fileUrl = canvas.nextElementSibling?.href;
+
+        if (fileUrl && fileUrl.endsWith(".pdf")) {
+            const ctx = canvas.getContext("2d");
+
+            pdfjsLib.getDocument(fileUrl).promise
+                .then((pdfDoc) => pdfDoc.getPage(1))
+                .then((page) => {
+                    const viewport = page.getViewport({ scale: 1 });
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+
+                    return page.render({
+                        canvasContext: ctx,
+                        viewport: viewport,
+                    }).promise;
+                })
+                .then(() => {
+                    console.log("PDF rendered successfully.");
+                })
+                .catch((err) => {
+                    console.error("Error rendering PDF page:", err);
+                })
+                .finally(() => {
+                    canvas.dataset.rendering = "false"; 
+                });
+        } else {
+            console.error("Invalid PDF file URL:", fileUrl);
+            canvas.dataset.rendering = "false";
+        }
+    }
+
+    function refreshPDFPreviews() {
+        const pdfPreviews = document.querySelectorAll(".pdf-preview");
+        pdfPreviews.forEach((canvas) => initializePDFPreview(canvas));
+    }
+
+    if (typeof observer === "undefined") {
+        const observer = new MutationObserver((mutationsList) => {
+            for (const mutation of mutationsList) {
+                if (mutation.type === "childList") {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.tagName === "CANVAS" && node.classList.contains("pdf-preview")) {
+                            initializePDFPreview(node);
+                        }
+                    });
+                }
+            }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    
+    refreshPDFPreviews();
+</script>
