@@ -1,69 +1,76 @@
 from channels.generic.websocket import WebsocketConsumer
 from django.shortcuts import get_object_or_404
-from django.template.loader import render_to_string
 from asgiref.sync import async_to_sync
 import json
 from .models import ChatGroup, GroupMessage
+from django.contrib.auth.models import User
 
 class ChatroomConsumer(WebsocketConsumer):
     def connect(self):
-        self.user = self.scope['user']
+        self.user = self.scope['user']  
         self.chatroom_name = self.scope['url_route']['kwargs']['chatroom_name']
         self.chatroom = get_object_or_404(ChatGroup, group_name=self.chatroom_name)
 
-        async_to_sync(self.channel_layer.group_add)(self.chatroom_name, self.channel_name)
-
-        user_id = self.user.id  
-        if user_id not in self.chatroom.users_online.values_list('id', flat=True):
-            self.chatroom.users_online.add(self.user)  
-
-        self.update_online_count()
-
+        async_to_sync(self.channel_layer.group_add)(
+            self.chatroom_name, self.channel_name
+        )
         self.accept()
 
     def disconnect(self, close_code):
-        async_to_sync(self.channel_layer.group_discard)(self.chatroom_name, self.channel_name)
-
-        user_id = self.user.id  
-        if user_id in self.chatroom.users_online.values_list('id', flat=True):
-            self.chatroom.users_online.remove(self.user)  
-        self.update_online_count()
+        async_to_sync(self.channel_layer.group_discard)(
+            self.chatroom_name, self.channel_name
+        )
 
     def receive(self, text_data):
-        text_data_json = json.loads(text_data)
-        body = text_data_json['body']
+        try:
+            text_data_json = json.loads(text_data)
+            author_username = text_data_json.get('author')
 
-        message = GroupMessage.objects.create(
-            body=body,
-            author=self.user,
-            group=self.chatroom
-        )
-        event = {
-            'type': 'message_handler',
-            'message_id': message.id
-        }
-        async_to_sync(self.channel_layer.group_send)(self.chatroom_name, event)
+            if not author_username:
+                raise ValueError("Missing 'author' in received data.")
+
+            user = User.objects.get(username=author_username)
+
+            if 'file_url' in text_data_json:
+                file_url = text_data_json['file_url']
+
+                # Only send the file URL to the group once
+                async_to_sync(self.channel_layer.group_send)(
+                    self.chatroom_name,
+                    {
+                        'type': 'message_handler',
+                        'file_url': file_url,
+                        'author': user.username,
+                    }
+                )
+            
+            elif 'body' in text_data_json:
+                body = text_data_json['body']
+                message = GroupMessage.objects.create(
+                    body=body,
+                    author=user,
+                    group=self.chatroom
+                )
+                async_to_sync(self.channel_layer.group_send)(
+                    self.chatroom_name,
+                    {
+                        'type': 'message_handler',
+                        'body': message.body,
+                        'author': message.author.username,
+                    }
+                )
+        except Exception as e:
+            self.send(text_data=json.dumps({'error': str(e)}))
 
     def message_handler(self, event):
-        message_id = event['message_id']
-        message = GroupMessage.objects.get(id=message_id)
-        context = {
-            'message': message,
-            'user': self.user,
-        }
-        html = render_to_string("rtChat/partials/chat_message_p.html", context=context)
-        self.send(text_data=html)
+        response_data = {}
 
-    def update_online_count(self):
-        online_count = self.chatroom.users_online.count()
+        if 'file_url' in event:
+            response_data['file_url'] = event['file_url']
+        
+        if 'body' in event:
+            response_data['body'] = event['body']
 
-        event = {
-            'type': 'online_count_handler',
-            'online_count': online_count
-        }
-        async_to_sync(self.channel_layer.group_send)(self.chatroom_name, event)
+        response_data['author'] = event.get('author')
 
-    def online_count_handler(self, event):
-        online_count = event['online_count']
-        html = render_to_string("rtChat/partials/online_count.html", {'online_count': online_count})
-        self.send(text_data=html)
+        self.send(text_data=json.dumps(response_data))

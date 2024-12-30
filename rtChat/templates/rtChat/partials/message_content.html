@@ -60,23 +60,6 @@
         const pdfPreviews = document.querySelectorAll(".pdf-preview");
         pdfPreviews.forEach((canvas) => initializePDFPreview(canvas));
     }
-
-    if (typeof observer === "undefined") {
-        const observer = new MutationObserver((mutationsList) => {
-            for (const mutation of mutationsList) {
-                if (mutation.type === "childList") {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.tagName === "CANVAS" && node.classList.contains("pdf-preview")) {
-                            initializePDFPreview(node);
-                        }
-                    });
-                }
-            }
-        });
-
-        observer.observe(document.body, { childList: true, subtree: true });
-    }
-
     
     refreshPDFPreviews();
 </script>

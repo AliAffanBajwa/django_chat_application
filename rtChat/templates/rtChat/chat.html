@@ -31,7 +31,6 @@
             </button>
             <ul class="dropdown-menu" aria-labelledby="chatDropdownMenu">
                 <li><a class="dropdown-item" href="{% url 'home' %}">Public Chat</a></li>
-                <!-- <li><a class="dropdown-item" href="#">Private Chat</a></li> -->
                 <li><a class="dropdown-item" href="{% url 'new-groupchat' %}">Group Chat</a></li>
                 {% for chatroom in user.chat_groups.all %}
                 {% if chatroom.groupchat_name %}
@@ -64,10 +63,9 @@
                 </a>
                 {% endif %}
             </div>
-            {% else %}
-            <span id="online-count" class="fw-bold me-1"></span>Online
             {% endif %}
         </div>
+        
 
         <div class="card-body overflow-auto" style="height: 45rem; display: flex; flex-direction: column; border-top: 1px solid #6c757d;">
             {% if chat_group.groupchat_name %}
@@ -92,27 +90,21 @@
         </div>
 
         <div class="card-footer bg-dark border-top border-secondary py-3">
-            <form id="chat_message_form" class="d-flex flex-column gap-3"
-                hx-ext="ws"
-                ws-connect="/ws/chatroom/{{ chatroom_name }}"
-                ws-send
-                _="on htmx:wsAfterSend reset() me">
+            <form id="chat_message_form" class="d-flex flex-column gap-3" method="POST">
                 {% csrf_token %}
                 <div class="input-group">
                     {{ form.body }}
                     <button type="submit" class="btn btn-success">Send</button>
                 </div>
             </form>
-
-            <form id="chat_file_form" enctype="multipart/form-data" class="d-flex align-items-center mt-3"
-                hx-post="{% url 'chat-file-upload' chat_group.group_name %}"
-                hx-target="#chat_messages"
-                hx-swap="beforeend">
+        
+            <form id="chat_file_form" enctype="multipart/form-data" class="d-flex align-items-center mt-3" method="POST">
                 {% csrf_token %}
                 <input type="file" name="file" id="id_file" class="form-control text-secondary">
                 <button type="submit" class="btn btn-primary text-nowrap ms-2">Upload</button>
             </form>
         </div>
+        
     </div>
 
     <div class="text-end mt-3">
@@ -129,41 +121,196 @@
 
 {% block javascript %}
 <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const chatContainer = document.getElementById("chat_container");
-        const chatMessages = document.getElementById("chat_messages");
-        const chatWindow = document.getElementById("chat_window"); 
+document.addEventListener("DOMContentLoaded", function () {
+    const chatContainer = document.getElementById("chat_container");
+    const chatMessages = document.getElementById("chat_messages");
 
-        function scrollPageToBottom() {
-            window.scrollTo(0, chatWindow.offsetTop + chatWindow.offsetHeight);
-        }
+    // Scroll chat container to the bottom
+    function scrollChatToBottom() {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
 
-        function scrollChatToBottom() {
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
+    // WebSocket connection
+    const socket = new WebSocket(`ws://localhost:8000/ws/chatroom/{{ chatroom_name }}`);
+    const currentUser = "{{ user.username }}";
 
-        document.body.addEventListener("htmx:afterSwap", function (event) {
-            if (event.target.id === "chat_messages") {
-                scrollChatToBottom(); 
-                scrollPageToBottom(); 
+    // WebSocket events
+    socket.addEventListener("open", () => console.log("WebSocket connection established"));
+    socket.addEventListener("error", (error) => console.error("WebSocket error:", error));
+    socket.addEventListener("message", (event) => handleIncomingMessage(event));
+
+    // Function to handle incoming WebSocket messages
+    async function handleIncomingMessage(event) {
+        try {
+            const data = JSON.parse(event.data);
+            const isCurrentUser = data.author === currentUser;
+
+            // Skip rendering duplicate file upload for the sender
+            if (isCurrentUser && data.source === "file_upload") return;
+
+            const messageElement = document.createElement("li");
+            messageElement.classList.add("d-flex", isCurrentUser ? "justify-content-end" : "justify-content-start", "mb-3");
+
+            if (data.body) {
+                // Handle text message
+                messageElement.innerHTML = `
+                    <div class="${isCurrentUser ? 'bg-success text-light' : 'bg-light text-dark'} rounded-3 p-3 shadow-sm chat-message">
+                        ${data.body}
+                    </div>
+                    ${!isCurrentUser ? `<div class="text-muted small mt-1">${data.author}</div>` : ""}
+                `;
+            } else if (data.file_url) {
+                // Ensure no duplicate rendering of the same file
+                const existingFile = document.querySelector(`a[href="${data.file_url}"]`);
+                if (existingFile) return; // File already rendered
+
+                // Handle file message with PDF preview
+                const isPDF = data.file_url.endsWith(".pdf");
+                const fileName = data.file_name || "Download File";
+
+                messageElement.innerHTML = `
+                    <div class="${isCurrentUser ? 'bg-success text-light' : 'bg-light text-dark'} rounded-3 p-3 shadow-sm chat-message">
+                        ${isPDF ? '<canvas class="pdf-preview" style="max-width: 18rem; min-width: 2rem;" data-rendering="false"></canvas>' : ""}
+                        <a href="${data.file_url}" target="_blank" download>${fileName}</a>
+                    </div>
+                    ${!isCurrentUser ? `<div class="text-muted small mt-1">${data.author}</div>` : ""}
+                `;
             }
-        });
 
-        const observer = new MutationObserver(() => {
+            chatMessages.appendChild(messageElement);
             scrollChatToBottom();
-            scrollPageToBottom();
-        });
 
-        observer.observe(chatMessages, {
-            childList: true, 
-            subtree: true
-        });
+            // Initialize PDF preview if needed
+            if (data.file_url && data.file_url.endsWith(".pdf")) {
+                const canvas = messageElement.querySelector(".pdf-preview");
+                initializePDFPreview(canvas);
+            }
+        } catch (error) {
+            console.error("Error processing incoming WebSocket message:", error);
+        }
+    }
 
-        scrollPageToBottom();
-        scrollChatToBottom();
+    // Sending text messages
+    document.getElementById("chat_message_form").addEventListener("submit", (event) => {
+        event.preventDefault();
+
+        const input = event.target.querySelector("[name='body']");
+        const messageContent = input.value.trim();
+
+        if (!messageContent) return;
+
+        if (socket.readyState === WebSocket.OPEN) {
+            const messageData = { body: messageContent, author: currentUser };
+            socket.send(JSON.stringify(messageData));
+            input.value = "";
+        } else {
+            console.error("WebSocket is not open");
+        }
     });
 
+   // File upload functionality
+    document.getElementById("chat_file_form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const formData = new FormData(event.target);
+        const csrfToken = document.querySelector("input[name='csrfmiddlewaretoken']").value;
+
+        try {
+            const response = await fetch("{% url 'chat-file-upload' chatroom_name %}", {
+                method: "POST",
+                body: formData,
+                headers: { "X-CSRFToken": csrfToken },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                const isPDF = data.file_url.endsWith(".pdf");
+                const fileName = data.file_name || "Download File";
+
+                // Check if the file is already rendered
+                const existingFile = document.querySelector(`a[href="${data.file_url}"]`);
+                if (existingFile) return;
+
+                // Render file preview for the sender
+                const messageElement = document.createElement("li");
+                messageElement.classList.add("d-flex", "justify-content-end", "mb-3");
+
+                messageElement.innerHTML = `
+                    <div class="bg-success text-light rounded-3 p-3 shadow-sm chat-message">
+                        ${isPDF ? '<canvas class="pdf-preview" style="max-width: 18rem; min-width: 2rem;" data-rendering="false"></canvas>' : ""}
+                        <a href="${data.file_url}" target="_blank" download>${fileName}</a>
+                    </div>
+                `;
+
+                chatMessages.appendChild(messageElement);
+                scrollChatToBottom();
+
+                // Initialize PDF preview for the sender
+                if (isPDF) {
+                    const canvas = messageElement.querySelector(".pdf-preview");
+                    initializePDFPreview(canvas);
+                }
+
+                // Send file URL via WebSocket with a "file_upload" source
+                if (socket.readyState === WebSocket.OPEN) {
+                    const fileMessage = {
+                        file_url: data.file_url,
+                        file_name: data.file_name,
+                        author: currentUser,
+                        source: "file_upload", // Identify as sender
+                    };
+                    socket.send(JSON.stringify(fileMessage));
+                }
+            } else {
+                console.error("File upload failed:", response.statusText);
+            }
+        } catch (error) {
+            console.error("File upload error:", error);
+        }
+    });
+
+
+    // PDF preview initialization
+    function initializePDFPreview(canvas) {
+        if (!canvas) return;
+
+        if (canvas.dataset.rendering === "true") return;
+
+        canvas.dataset.rendering = "true";
+
+        const pdfjsLib = window["pdfjs-dist/build/pdf"];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+        const fileUrl = canvas.nextElementSibling?.href;
+
+        if (fileUrl && fileUrl.endsWith(".pdf")) {
+            const ctx = canvas.getContext("2d");
+
+            pdfjsLib.getDocument(fileUrl).promise
+                .then((pdfDoc) => pdfDoc.getPage(1))
+                .then((page) => {
+                    const viewport = page.getViewport({ scale: 1 });
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+
+                    return page.render({
+                        canvasContext: ctx,
+                        viewport: viewport,
+                    }).promise;
+                })
+                .catch((err) => console.error("Error rendering PDF preview:", err))
+                .finally(() => {
+                    canvas.dataset.rendering = "false";
+                });
+        } else {
+            console.error("Invalid PDF file URL:", fileUrl);
+            canvas.dataset.rendering = "false";
+        }
+    }
+
+    // Initial scroll to bottom on page load
+    scrollChatToBottom();
+});
+
 </script>
-
-
-{% endblock %}
+    
+{% endblock %} 

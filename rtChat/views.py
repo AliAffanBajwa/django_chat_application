@@ -2,44 +2,41 @@ from django.shortcuts import render,get_object_or_404,redirect
 from django.contrib.auth.decorators import login_required
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from django.http import HttpResponse
+from django.http import JsonResponse, HttpResponseBadRequest
 from .models import ChatGroup, GroupMessage
 from .forms import ChatmessageCreateForm, NewGroupForm, ChatRoomEditForm
 from django.contrib.auth.models import User
 from django.http import Http404
 
-# Create your views here.
 @login_required
 def chat_view(request, chatroom_name='public-chat'):
     chat_group = get_object_or_404(ChatGroup, group_name=chatroom_name)
-    chat_messages = chat_group.chat_messages.all()
-    form = ChatmessageCreateForm()
+  
+    chat_messages = chat_group.chat_messages.all().order_by('-created')  
+    
+    form = ChatmessageCreateForm(request.POST or None)  
 
     other_user = None
     if chat_group.is_private:
         if request.user not in chat_group.members.all():
             raise Http404()
-        for member in chat_group.members.all():
-            if member != request.user:
-                other_user = member
-                break
+        other_user = chat_group.members.exclude(id=request.user.id).first()
 
     if chat_group.groupchat_name:
         if request.user not in chat_group.members.all():
             chat_group.members.add(request.user)
 
-    if request.htmx:
-        form = ChatmessageCreateForm(request.POST)
-        if form.is_valid:
-            message = form.save(commit=False)
-            message.author = request.user
-            message.group = chat_group
-            message.save()
-            context = {
-                'message': message,
-                'user' : request.user
-            }
-            return render(request, 'rtchat/partials/chat_message_p.html', context)
+    if request.method == 'POST' and form.is_valid():
+        new_message = form.save(commit=False)
+        new_message.author = request.user
+        new_message.chat_group = chat_group
+        new_message.save()
+
+        return JsonResponse({
+            'message': new_message.body,
+            'author': new_message.author.username,
+            'file_url': new_message.file.url if new_message.file else None  # File URL if exists
+        })
 
     context = {
         'chat_messages': chat_messages,
@@ -137,21 +134,32 @@ def chatroom_leave_view(request, chatroom_name):
     return render(request, 'rtChat/chatroom_leave.html', {'chat_group': chat_group})
 
 def chat_file_upload(request, chatroom_name):
+    if not request.user.is_authenticated:
+        return HttpResponseBadRequest("Unauthorized user")
+
     chat_group = get_object_or_404(ChatGroup, group_name=chatroom_name)
 
-    if request.htmx and request.FILES:
+    if request.method == "POST" and 'file' in request.FILES:
         file = request.FILES['file']
         message = GroupMessage.objects.create(
-            file = file,
-            author = request.user,
-            group = chat_group,
+            file=file,
+            author=request.user,
+            group=chat_group,
         )
         channel_layer = get_channel_layer()
         event = {
-            'type':'message_handler',
-            'message_id':message.id
+            'type': 'message_handler',
+            'message_id': message.id
         }
         async_to_sync(channel_layer.group_send)(
             chatroom_name, event
         )
-        return HttpResponse()
+
+        # Return file information
+        return JsonResponse({
+            "file_url": message.file.url,
+            "message_id": message.id,
+            "author": message.author.username,
+        })
+
+    return HttpResponseBadRequest("Invalid request")

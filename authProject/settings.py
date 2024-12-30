@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-)clg&yagbp@kp$0ig$u9_lb7uw8#)d**(y@1%bkwar=a+mmef-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -39,8 +39,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'authApp',
-    'django_htmx',
     'rtChat',
+    # 'django_htmx',
 ]
 
 MIDDLEWARE = [
