@@ -67,7 +67,7 @@ chat_project/
 #### 1. Clone the Repository
 ```bash
 git clone https://github.com/AliAffanBajwa/django_chat_application
-cd django-rtchat
+cd django_chat_application
 ```
 
 #### 2. Create Virtual Environment
@@ -79,6 +79,7 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 #### 3. Install Dependencies
 ```bash
 pip install -r requirements.txt
+python -m pip install -U 'channels[daphne]'
 ```
 
 #### 4. Apply Migrations
@@ -109,7 +110,7 @@ Make sure you’ve added Channels to `INSTALLED_APPS`:
 INSTALLED_APPS = [
     'daphne',
     ...
-    'channels',
+    'django_htmx',
     'rtChat',
     'authApp',
 ]
@@ -129,14 +130,12 @@ INSTALLED_APPS = [
 ### 📦 requirements.txt (sample)
 
 ```
-Django>=4.2
-channels>=4.0
-daphne>=4.0
+django
+channels
+daphne
 djang-htmx
+shortuuid
 ```
-
-(You can extend this as per your environment.)
-
 ---
 
 ### ✅ HTMX Integration
@@ -162,5 +161,4 @@ HTMX is used for sending chat messages asynchronously:
 | `python manage.py runserver`    | Run app (sync, for testing)            |
 | `python manage.py createsuperuser` | Create admin user                |
 | `python manage.py collectstatic` | Prepare static files              |
-.
 
