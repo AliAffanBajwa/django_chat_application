@@ -1,0 +1,4 @@
+django
+channels
+django-htmx
+shortuuid

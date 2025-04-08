@@ -11,7 +11,10 @@ from django.http import Http404
 # Create your views here.
 @login_required
 def chat_view(request, chatroom_name='public-chat'):
-    chat_group = get_object_or_404(ChatGroup, group_name=chatroom_name)
+    chat_group, created = ChatGroup.objects.get_or_create(
+        group_name=chatroom_name,
+        defaults={'is_private': False}  
+    )
     chat_messages = chat_group.chat_messages.all()
     form = ChatmessageCreateForm()
 
