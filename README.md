@@ -40,7 +40,7 @@ A real-time chat application built with **Django**, **Channels**, **Daphne**, **
 ### 📂 Project Structure
 
 ```
-chat_project/
+django_chat_application/
 │
 ├── rtChat/                # Chat app with views, consumers, models
 │   ├── consumers.py       # WebSocket handlers
@@ -50,12 +50,10 @@ chat_project/
 │   ├── templates/         # Templates (HTMX + Bootstrap)
 │
 ├── authApp/               # Handles authentication (login/register)
-├── chat_project/          # Main project config (settings, urls)
+├── authProject/          # Main project config (settings, urls)
 │   ├── asgi.py            # ASGI config with channel layers
 │   ├── settings.py
 │
-├── static/                # Static files
-├── templates/             # Base templates
 ├── requirements.txt       # Dependencies
 └── manage.py
 ```
@@ -160,5 +158,3 @@ HTMX is used for sending chat messages asynchronously:
 |----------------------------------|------------------------------------|
 | `python manage.py runserver`    | Run app (sync, for testing)            |
 | `python manage.py createsuperuser` | Create admin user                |
-| `python manage.py collectstatic` | Prepare static files              |
-
